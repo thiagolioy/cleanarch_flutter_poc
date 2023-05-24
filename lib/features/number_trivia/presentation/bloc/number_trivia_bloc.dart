@@ -1,4 +1,6 @@
 import 'package:bloc/bloc.dart';
+import 'package:cleanarch_project/core/error/failures.dart';
+import 'package:cleanarch_project/core/usecases/usecase.dart';
 import 'package:cleanarch_project/core/util/input_converter.dart';
 import 'package:cleanarch_project/features/number_trivia/domain/entities/number_trivia.dart';
 import 'package:cleanarch_project/features/number_trivia/domain/usecases/get_concrete_number_trivia.dart';
@@ -23,15 +25,48 @@ class NumberTriviaBloc extends Bloc<NumberTriviaEvent, NumberTriviaState> {
       required this.getRandomNumberTrivia,
       required this.inputConverter})
       : super(NumberTriviaInitial()) {
-    on<GetTriviaForRandomNumber>((event, emit) {});
+    on<GetTriviaForRandomNumber>(
+        (event, emit) => _handleGetTriviaForRandomNumber(event, emit));
+    on<GetTriviaForConcreteNumber>(
+        (event, emit) => _handleGetTriviaForConcreteNumber(event, emit));
+  }
 
-    on<GetTriviaForConcreteNumber>((event, emit) {
-      final input = inputConverter.stringToUnsignedInteger(event.numberString);
-      input.fold((failure) {
-        emit(const NumberTriviaError(INVALID_INPUT_FAILURE_MSG));
-      }, (number) {
-        throw UnimplementedError();
+  void _handleGetTriviaForRandomNumber(
+      GetTriviaForRandomNumber event, Emitter<NumberTriviaState> emit) async {
+    emit(NumberTriviaLoadInProgress());
+    final failureOrTrivia = await getRandomNumberTrivia(const NoParams());
+    failureOrTrivia.fold((failure) {
+      emit(NumberTriviaError(_mapFailureToMsg(failure)));
+    }, (trivia) {
+      emit(NumberTriviaLoaded(trivia));
+    });
+  }
+
+  void _handleGetTriviaForConcreteNumber(
+      GetTriviaForConcreteNumber event, Emitter<NumberTriviaState> emit) {
+    final input = inputConverter.stringToUnsignedInteger(event.numberString);
+    input.fold((failure) {
+      emit(const NumberTriviaError(INVALID_INPUT_FAILURE_MSG));
+    }, (number) async {
+      emit(NumberTriviaLoadInProgress());
+      final failureOrTrivia =
+          await getConcreteNumberTrivia(Params(number: number));
+      failureOrTrivia.fold((failure) {
+        emit(NumberTriviaError(_mapFailureToMsg(failure)));
+      }, (trivia) {
+        emit(NumberTriviaLoaded(trivia));
       });
     });
+  }
+
+  String _mapFailureToMsg(Failure failure) {
+    switch (failure.runtimeType) {
+      case ServerFailure:
+        return SERVER_FAILURE_MSG;
+      case CacheFailure:
+        return CACHE_FAILURE_MSG;
+      default:
+        return "Unexpected Error";
+    }
   }
 }
